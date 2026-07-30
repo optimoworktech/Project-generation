@@ -1,24 +1,72 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 
-const opportunityTypes = ["New Prospect", "Existing Customer", "Renewal"];
-const vendors = ["monday.com", "Microsoft", "Odoo", "Canva", "Other"];
-const productOptions = ["CRM", "Automation", "Analytics", "Marketplace", "Support"];
+import { AccountPlanDisplay } from "@/components/account-plan-display";
+import { GeneratingPlanState } from "@/components/generating-plan-state";
+import type { AccountPlan } from "@/lib/account-plan-schema";
+import { OPPORTUNITY_TYPES, type OpportunityType } from "@/lib/partner-dna";
+
+type RequestState = "idle" | "loading" | "success" | "error";
 
 export default function Home() {
-  const [opportunityType, setOpportunityType] = useState("New Prospect");
+  const [opportunityType, setOpportunityType] = useState<OpportunityType>("New logo");
   const [targetCompany, setTargetCompany] = useState("");
-  const [currentVendor, setCurrentVendor] = useState("monday.com");
-  const [implementedProducts, setImplementedProducts] = useState<string[]>(["CRM"]);
+  const [requestState, setRequestState] = useState<RequestState>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [plan, setPlan] = useState<AccountPlan | null>(null);
+  const [submittedCompany, setSubmittedCompany] = useState("");
+  const [submittedOpportunityType, setSubmittedOpportunityType] = useState<OpportunityType>("New logo");
 
-  const toggleProduct = (product: string) => {
-    setImplementedProducts((current) =>
-      current.includes(product)
-        ? current.filter((item) => item !== product)
-        : [...current, product],
-    );
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const company = targetCompany.trim();
+    if (!company) {
+      setErrorMessage("Please enter a target company.");
+      setRequestState("error");
+      return;
+    }
+
+    setRequestState("loading");
+    setErrorMessage(null);
+    setPlan(null);
+    setSubmittedCompany(company);
+    setSubmittedOpportunityType(opportunityType);
+
+    try {
+      const response = await fetch("/api/account-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetCompany: company,
+          opportunityType,
+        }),
+      });
+
+      const data = (await response.json()) as { plan?: AccountPlan; error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Unable to generate the account plan.");
+      }
+
+      if (!data.plan) {
+        throw new Error("The server returned an empty account plan.");
+      }
+
+      setPlan(data.plan);
+      setRequestState("success");
+    } catch (error) {
+      setRequestState("error");
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while generating the account plan.",
+      );
+    }
   };
+
+  const isLoading = requestState === "loading";
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.18),_transparent_55%),linear-gradient(135deg,_#f8fafc_0%,_#eef2ff_100%)] px-4 py-6 text-slate-900 sm:px-6 lg:px-8">
@@ -34,9 +82,9 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-5xl items-center justify-center px-2 py-8 sm:px-4 lg:py-12">
+      <main className="mx-auto max-w-5xl px-2 py-8 sm:px-4 lg:py-12">
         <section className="w-full rounded-[32px] border border-slate-200 bg-white/95 p-6 shadow-[0_30px_80px_-25px_rgba(15,23,42,0.28)] backdrop-blur sm:p-8 lg:p-10">
-          <div className="mx-auto max-w-2xl">
+          <div className="mx-auto max-w-3xl">
             <div className="mb-6 inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700">
               Revenue strategy workspace
             </div>
@@ -48,7 +96,7 @@ export default function Home() {
               Build a tailored go-to-market motion for your next account with a focused, executive-ready plan.
             </p>
 
-            <div className="mt-8 space-y-6">
+            <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">
                   Target company
@@ -57,16 +105,17 @@ export default function Home() {
                   value={targetCompany}
                   onChange={(event) => setTargetCompany(event.target.value)}
                   placeholder="e.g. Northwind Labs"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                  disabled={isLoading}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </label>
 
-              <div>
-                <span className="mb-3 block text-sm font-medium text-slate-700">
+              <fieldset disabled={isLoading}>
+                <legend className="mb-3 block text-sm font-medium text-slate-700">
                   Opportunity type
-                </span>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {opportunityTypes.map((type) => {
+                </legend>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {OPPORTUNITY_TYPES.map((type) => {
                     const isSelected = opportunityType === type;
                     return (
                       <button
@@ -84,69 +133,39 @@ export default function Home() {
                     );
                   })}
                 </div>
+              </fieldset>
+
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                Customer-facing content will be generated automatically in English or Spanish based on the target company&apos;s country.
               </div>
 
-              {(opportunityType === "Existing Customer" || opportunityType === "Renewal") && (
-                <div className="space-y-5 rounded-3xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-medium text-slate-700">
-                      Current vendor
-                    </span>
-                    <select
-                      value={currentVendor}
-                      onChange={(event) => setCurrentVendor(event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                    >
-                      {vendors.map((vendor) => (
-                        <option key={vendor} value={vendor}>
-                          {vendor}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <div>
-                    <span className="mb-3 block text-sm font-medium text-slate-700">
-                      Implemented products
-                    </span>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {productOptions.map((product) => {
-                        const checked = implementedProducts.includes(product);
-                        return (
-                          <label
-                            key={product}
-                            className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2 text-sm transition ${
-                              checked
-                                ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                                : "border-slate-200 bg-white text-slate-600"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleProduct(product)}
-                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                            />
-                            <span>{product}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
+              {errorMessage && (
+                <div
+                  role="alert"
+                  className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                >
+                  {errorMessage}
                 </div>
               )}
 
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                Customer-facing content will be generated automatically in English or Spanish based on the target company’s country.
-              </div>
-
               <button
-                type="button"
-                className="w-full rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 sm:w-auto"
+                type="submit"
+                disabled={isLoading}
+                className="w-full rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-500 sm:w-auto"
               >
-                Generate Revenue Strategy
+                {isLoading ? "Generating Account Plan..." : "Generate Account Plan"}
               </button>
-            </div>
+            </form>
+
+            {isLoading && <GeneratingPlanState targetCompany={submittedCompany} />}
+
+            {requestState === "success" && plan && (
+              <AccountPlanDisplay
+                plan={plan}
+                targetCompany={submittedCompany}
+                opportunityType={submittedOpportunityType}
+              />
+            )}
           </div>
         </section>
       </main>
